@@ -25,7 +25,9 @@ async function RequestHandler(path, systemid, format, opts) {
 
     // URL
     const url =
-        "http://127.0.0.1:8080/proxy/remote/" +
+        // http or https
+        // "http://127.0.0.1:8080/proxy/remote/" +
+        "https://127.0.0.1:8081/proxy/remote/" +           
         encodeURIComponent(system.url + path) +
         "/" +
         system.id;
@@ -44,6 +46,9 @@ async function RequestHandler(path, systemid, format, opts) {
     if (format === "xml") options.headers["content-type"] = "application/xml";
     if (format === "json") options.headers["content-type"] = "application/json";
 
+    // if self signed certificates are used (DO NOT USE IN PRODUCTION!)
+    process.env["NODE_TLS_REJECT_UNAUTHORIZED"] = 0;    
+
     const response = await fetch(url, options);
 
     const contentType = response.headers.get("content-type");
@@ -52,6 +57,11 @@ async function RequestHandler(path, systemid, format, opts) {
         headers: response.headers,
         data: null,
     };
+
+    // no content (return after PATCH and DELETE)
+    if (response.status === 204) {         
+        return responseData;
+    }
 
     if (response.status !== 200) {
         responseData.message = response.status + ": " + response.statusText;

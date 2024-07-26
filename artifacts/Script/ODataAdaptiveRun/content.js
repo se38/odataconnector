@@ -40,13 +40,101 @@ switch (req.query.method) {
 }
 
 async function processDelete() {
-    result.data = {
-        status: "ERROR",
-        message: {
-            type: "error",
-            text: "Delete not currently supported.",
+
+    let dataPatch = {};
+    let resSave;
+    let resFetch;
+    let entitySet;
+
+    let opts = {
+        body: null,
+        method: "GET",
+        headers: {
+            "X-CSRF-Token": "fetch",
+            cookie: "",
         },
     };
+
+    // API Query - Select & Data
+    req.body._settings.fieldsSel.forEach(function (field) {
+        dataPatch[field.name] = req.body[field.name];
+    });
+
+    // API Query - Record ID
+    if (req.body.data.__metadata && req.body.data.__metadata.id) {
+        const parts = req.body.data.__metadata.id.split("/");
+        entitySet = parts[parts.length - 1];
+    }
+
+    try {
+        // GET X-CSRF-TOKEN
+        let SystemUrl = BaseUrl + Service + "/" + entitySet + "?$format=json";
+
+        resFetch = await globals.Utils.RequestHandler(SystemUrl, SystemId, "json", opts);
+
+        opts.headers["X-CSRF-Token"] = resFetch.headers.get("x-csrf-token");
+        opts.headers["cookie"] = resFetch.headers.get("set-cookie");
+
+        // if etag is defined in RAP behaviour definition it will be returned by the GET request (Uwe)
+        const etag = resFetch.headers.get("etag");
+        if (etag) {
+            opts.headers["If-Match"] = etag;    
+        }
+
+        opts.headers["X-Requested-With"] = "X";   // if you've deactivated CSRF token in SICF
+
+        opts.method = "DELETE";
+        opts.body = JSON.stringify(dataPatch);
+
+        // TODO: Problem is csrf validation ["keep-alive" must be set somewhere]
+
+        // DELETE
+        // SystemUrl = BaseUrl + Service + "/" + connector.config.entitySet; 
+        SystemUrl = BaseUrl + Service + "/" + entitySet;  // (PATCH + DELETE: use Entity, not the EntitySet)
+
+        resSave = await globals.Utils.RequestHandler(SystemUrl, SystemId, "json", opts);
+
+        if (resSave.message) {
+            result.data = {
+                status: "ERROR",
+                message: {
+                    text: resSave.message,
+                },
+                debug: {
+                    opts,
+                    dataPatch,
+                    SystemUrl,
+                },
+            };
+        } else {
+            result.data = {
+                status: "OK",
+                debug: {
+                    opts,
+                    dataPatch,
+                },
+            };
+        }
+
+        complete();
+    } catch (error) {
+        let errorMessage = "";
+        if (error && error.message) errorMessage = error.message;
+
+        log.error("Error in request: ", error);
+        result.data = {
+            error: error,
+            debug: {
+                req: req.body,
+                dataPatch,
+                opts: opts,
+            },
+            message: {
+                text: errorMessage,
+            },
+        };
+        complete();
+    }
 
     complete();
 }
@@ -517,7 +605,6 @@ async function processSave() {
         let SystemUrl = BaseUrl + Service + "/" + entitySet + "?$format=json";
 
         // if (opts.parameters.$select) SystemUrl += "&$select=" + opts.parameters.$select;
-
         resFetch = await globals.Utils.RequestHandler(SystemUrl, SystemId, "json", opts);
 
         // console.log(resFetch.headers);
@@ -525,17 +612,22 @@ async function processSave() {
         opts.headers["X-CSRF-Token"] = resFetch.headers.get("x-csrf-token");
         opts.headers["cookie"] = resFetch.headers.get("set-cookie");
 
+        // if etag is defined in RAP behaviour definition it will be returned by the GET request (Uwe)
+        const etag = resFetch.headers.get("etag");
+        if (etag) {
+            opts.headers["If-Match"] = etag;    
+        }
+        
+        opts.headers["X-Requested-With"] = "X";   // if you've deactivated CSRF token in SICF
+
         opts.method = "PATCH";
         opts.body = JSON.stringify(dataPatch);
-        // opts.body = resFetch.data;
 
-        // delete opts.parameters.$select;
-
-        // TODO: Problem is csrf validation
-        // Need both Cookie + x-csrf-token in SAVE Request
+        // TODO: Problem is csrf validation ["keep-alive" must be set somewhere]
 
         // SAVE
-        SystemUrl = BaseUrl + Service + "/" + connector.config.entitySet;
+        // SystemUrl = BaseUrl + Service + "/" + connector.config.entitySet;   
+        SystemUrl = BaseUrl + Service + "/" + entitySet;  // (PATCH + DELETE: use Entity, not the EntitySet)
 
         resSave = await globals.Utils.RequestHandler(SystemUrl, SystemId, "json", opts);
 
